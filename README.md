@@ -165,7 +165,7 @@ MODEL_NAME     = 'tcn'      # cnn | gru | tcn
 | **MAE** | Mean Absolute Error in Watts — primary regression metric |
 | **F1** | Harmonic mean of Precision and Recall computed on duration-filtered ON/OFF status: `F1 = 2 · (Precision · Recall) / (Precision + Recall)`. The duration filter is applied to both ground truth and predictions before scoring, so the metric reflects appliance-cycle detection quality rather than sample-level jitter (see [Postprocessing](#postprocessing)) |
 | **Accuracy** | Overall ON/OFF classification accuracy |
-| **Energy Error %** | Absolute relative error on total energy consumption (Wh) |
+
 
 ---
 
