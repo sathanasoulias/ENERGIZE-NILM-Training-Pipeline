@@ -174,14 +174,7 @@ class Tester:
             agg = agg[offset:]
             agg = agg[:len(predictions)]
 
-        elif self.model_name == 'gru':
-            offset = self.input_window_length - 1
-            agg = agg[offset:]
-            ground_truth = ground_truth[offset:]
-            ground_truth = ground_truth[:len(predictions)]
-            agg = agg[:len(predictions)]
-
-        elif self.model_name == 'tcn':
+        elif self.model_name == 'wavenet_tcn':
             ground_truth = ground_truth[:len(predictions)]
             agg = agg[:len(predictions)]
 
@@ -337,12 +330,7 @@ class SimpleTester:
             ground_truth = ground_truth[offset:]
             ground_truth = ground_truth[:len(predictions)]
 
-        elif self.model_name == 'gru':
-            offset = self.input_window_length - 1
-            ground_truth = ground_truth[offset:]
-            ground_truth = ground_truth[:len(predictions)]
-
-        elif self.model_name == 'tcn':
+        elif self.model_name == 'wavenet_tcn':
             ground_truth = ground_truth[:len(predictions)]
 
         # Denormalize

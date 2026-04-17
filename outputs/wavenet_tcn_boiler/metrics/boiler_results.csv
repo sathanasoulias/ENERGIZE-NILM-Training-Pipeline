@@ -1,0 +1,2 @@
+Model,Appliance,Dataset,MAE,Precision_Complex,Recall_Complex,F1_Complex,Accuracy,GT_Energy_Wh,Pred_Energy_Wh
+tcn,boiler,plegma,10.0493,0.9044,0.9637,0.9331,0.9972,22142.48,22857.9

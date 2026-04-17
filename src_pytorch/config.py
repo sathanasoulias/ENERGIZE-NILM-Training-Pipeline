@@ -17,21 +17,57 @@ MODEL_CONFIGS = {
     'cnn': {
         'input_window_length': 299,
         'batch_size': 1024,
+        'training': {
+            'epochs': 50,
+            'learning_rate': 0.001,
+            'early_stopping_patience': 5,
+            'early_stopping_min_delta': 1e-6,
+            'lr_scheduler': {
+                'factor': 0.5,
+                'patience': 3,
+                'min_lr': 1e-6,
+                'cooldown': 2,
+            },
+        },
     },
-    # Seq2Point GRU: last time-step of the window is the prediction target
-    'gru': {
-        'input_window_length': 199,
-        'batch_size': 1200,
+    # Seq2Seq CNN: same backbone as Seq2Point but predicts the full 299-sample window
+    'cnn_seq2seq': {
+        'input_window_length': 299,
+        'batch_size': 512,
+        'training': {
+            'epochs': 15,
+            'learning_rate': 0.0001,
+            'early_stopping_patience': 5,
+            'early_stopping_min_delta': 1e-6,
+            'lr_scheduler': {
+                'factor': 0.5,
+                'patience': 3,
+                'min_lr': 1e-6,
+                'cooldown': 2,
+            },
+        },
     },
-    # Seq2Seq TCN: entire window is predicted; dilated causal convolutions
-    'tcn': {
+    # WaveNet TCN: entire window is predicted; dilated causal convolutions with gating
+    'wavenet_tcn': {
         'input_window_length': 600,
-        'batch_size': 50,
+        'batch_size': 128,
         'depth': 9,                                                  # Number of dilated conv blocks
-        'nb_filters': [512, 256, 256, 128, 128, 256, 256, 256, 512],  # Filters per block
-        'dropout': 0.2,                                              # Dropout rate
+        'nb_filters': [512, 360, 360, 256, 256, 256, 360, 360, 512],  # Filters per block
+        'dropout': 0.1,                                              # Dropout rate
         'stacks': 1,                                                 # Number of TCN stacks
         'res_l2': 0,                                                 # L2 on residual connections
+        'training': {
+            'epochs': 100,
+            'learning_rate': 0.001,
+            'early_stopping_patience': 40,
+            'early_stopping_min_delta': 1e-6,
+            'lr_scheduler': {
+                'factor': 0.5,
+                'patience': 7,
+                'min_lr': 1e-6,
+                'cooldown': 2,
+            },
+        },
     },
 }
 
@@ -40,16 +76,23 @@ MODEL_CONFIGS = {
 # Adam optimiser settings and epoch budget shared across all experiments.
 # =============================================================================
 TRAINING = {
-    'epochs': 1,            # Maximum number of training epochs
-    'learning_rate': 0.001,   # Adam initial learning rate
+    'epochs': 50,             # Default max epochs (used by tcn; cnn/cnn_seq2seq override this)
+    'learning_rate': 0.0001,  # Adam initial learning rate
     'beta_1': 0.9,            # Adam first moment decay
     'beta_2': 0.999,          # Adam second moment decay
     'epsilon': 1e-8,          # Adam numerical stability term
     'loss': 'mse',            # Loss function identifier
     'metrics': ['mse', 'mae'],
     # Early stopping — referenced directly in trainer setup
-    'early_stopping_patience': 6,
+    'early_stopping_patience': 10,
     'early_stopping_min_delta': 1e-6,
+    # ReduceLROnPlateau scheduler
+    'lr_scheduler': {
+        'factor': 0.5,      # Multiply LR by this factor on plateau
+        'patience': 3,      # Epochs with no val_loss improvement before reducing LR
+        'min_lr': 1e-6,     # Lower bound on the learning rate
+        'cooldown': 2,      # Epochs to wait after a reduction before resuming normal operation
+    },
 }
 
 # =============================================================================
@@ -59,7 +102,7 @@ TRAINING = {
 CALLBACKS = {
     'early_stopping': {
         'monitor': 'val_loss',
-        'patience': 6,
+        'patience': 40,
         'min_delta': 1e-6,
         'mode': 'min',
         'verbose': True,
@@ -222,7 +265,7 @@ def get_model_config(model_name: str) -> dict:
     """Return architecture hyperparameters for a given model.
 
     Args:
-        model_name: ``'cnn'``, ``'gru'``, or ``'tcn'``
+        model_name: ``'cnn'``, ``'gru'``, or ``'wavenet_tcn'``
 
     Returns:
         Dict containing at minimum ``input_window_length`` and ``batch_size``
@@ -246,6 +289,23 @@ def get_dataset_config(dataset_name: str) -> dict:
         KeyError: If dataset name is not found
     """
     return DATASET_CONFIGS[dataset_name]
+
+
+def get_training_config(model_name: str) -> dict:
+    """Return training hyperparameters for a given model.
+
+    Model-specific training config (defined inside MODEL_CONFIGS) takes
+    priority. Falls back to the global TRAINING dict for models that do not
+    define their own (e.g. gru, tcn).
+
+    Args:
+        model_name: ``'cnn'``, ``'cnn_seq2seq'``, or ``'wavenet_tcn'``
+
+    Returns:
+        Dict with keys ``epochs``, ``learning_rate``, ``early_stopping_patience``,
+        ``early_stopping_min_delta``, and ``lr_scheduler``
+    """
+    return MODEL_CONFIGS.get(model_name, {}).get('training', TRAINING)
 
 
 def get_dataset_split(dataset_name: str, appliance_name: str) -> dict:

@@ -26,7 +26,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-from .models import CNN_NILM, GRU_NILM, TCN_NILM
+from .models import CNN_NILM, TCN_NILM
 from .data_loader import SimpleNILMDataLoader
 from .trainer import Trainer
 from .config import get_model_config, get_appliance_params, TRAINING, CALLBACKS
@@ -46,7 +46,7 @@ def build_nilm_model(model_name: str, model_config: dict) -> nn.Module:
 
     Parameters
     ----------
-    model_name   : ``'cnn'``, ``'gru'``, or ``'tcn'``
+    model_name   : ``'cnn'``, ``'cnn_seq2seq'``, or ``'tcn'``
     model_config : dict returned by :func:`~src_pytorch.config.get_model_config`
 
     Returns
@@ -57,9 +57,7 @@ def build_nilm_model(model_name: str, model_config: dict) -> nn.Module:
 
     if model_name == 'cnn':
         return CNN_NILM(input_window_length=window)
-    if model_name == 'gru':
-        return GRU_NILM(input_window_length=window)
-    if model_name == 'tcn':
+    if model_name == 'wavenet_tcn':
         return TCN_NILM(
             input_window_length=window,
             depth=model_config.get('depth', 9),
@@ -67,7 +65,7 @@ def build_nilm_model(model_name: str, model_config: dict) -> nn.Module:
             dropout=model_config.get('dropout', 0.2),
             stacks=model_config.get('stacks', 1),
         )
-    raise ValueError(f"Unknown model: '{model_name}'. Choose from cnn, gru, tcn.")
+    raise ValueError(f"Unknown model: '{model_name}'. Choose from cnn, cnn_seq2seq, tcn.")
 
 
 # =============================================================================
@@ -140,7 +138,11 @@ def run_training(
     print(f"  Val   batches : {len(data_loader.val)}")
 
     model = build_nilm_model(model_name, model_config).to(device)
-    print(f"  Parameters    : {count_parameters(model):,}\n")
+    n_params = count_parameters(model)
+    model_size_mb = n_params * 4 / 1024**2
+    print(f"  Parameters    : {n_params:,}")
+    print(f"  Size (FP32)   : {model_size_mb:.1f} MB")
+    print(f"  Size (INT8)   : {model_size_mb / 4:.1f} MB\n")
 
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -400,7 +402,7 @@ def run_finetuning(
             # TCN     : output (B, seq_len, 1), target (B, seq_len) → (B, seq_len, 1)
             if model_name in ('cnn', 'gru') and batch_y.dim() == 1:
                 batch_y = batch_y.unsqueeze(1)
-            elif model_name == 'tcn' and batch_y.dim() == 2:
+            elif model_name == 'wavenet_tcn' and batch_y.dim() == 2:
                 batch_y = batch_y.unsqueeze(-1)
 
             loss = loss_fn(outputs, batch_y)
@@ -482,7 +484,7 @@ def run_quantization(
     -------
     dict | None — metrics dict (mae, f1, …) or ``None`` if skipped
     """
-    if model_name != 'tcn':
+    if model_name != 'wavenet_tcn':
         print(
             f"\n  [Quantization] {model_name.upper()} quantization is not yet "
             "supported — to be implemented in a later version."

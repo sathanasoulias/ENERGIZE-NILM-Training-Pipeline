@@ -2,10 +2,10 @@
 PyTorch implementation of OpenNILM
 
 This package provides PyTorch implementations of NILM (Non-Intrusive Load Monitoring)
-models including CNN, GRU, and TCN architectures.
+models including CNN and TCN architectures.
 """
 
-from .models import CNN_NILM, GRU_NILM, TCN_NILM, get_model
+from .models import CNN_NILM, TCN_NILM, CNN_NILM_Seq2Seq, get_model
 from .data_loader import NILMDataset, DataLoaderNILM, SimpleNILMDataLoader
 from .trainer import Trainer, train_model, EarlyStopping, ModelCheckpoint, TrainingHistory
 from .tester import Tester, SimpleTester, load_model
@@ -55,8 +55,8 @@ __version__ = '1.0.0'
 __all__ = [
     # Models
     'CNN_NILM',
-    'GRU_NILM',
     'TCN_NILM',
+    'CNN_NILM_Seq2Seq',
     'get_model',
 
     # Data

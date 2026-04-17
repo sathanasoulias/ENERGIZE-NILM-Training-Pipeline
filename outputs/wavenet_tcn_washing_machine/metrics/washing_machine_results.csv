@@ -1,0 +1,2 @@
+Model,Appliance,Dataset,MAE,Precision_Complex,Recall_Complex,F1_Complex,Accuracy,GT_Energy_Wh,Pred_Energy_Wh
+tcn,washing_machine,plegma,4.1992,0.8177,0.9439,0.8763,0.9844,1839.96,2240.83

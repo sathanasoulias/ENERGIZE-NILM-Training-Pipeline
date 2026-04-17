@@ -170,10 +170,11 @@ def compute_metrics(
     Returns
     -------
     dict with keys:
-        mae, f1, accuracy, precision, recall,
+        mae, accuracy,
         tp, tn, fp, fn,
         total_gt_energy_wh, total_pred_energy_wh, energy_error_percent
-        and optionally f1_complex (when min_on and min_off are given)
+        and optionally precision_complex, recall_complex, f1_complex
+        (when min_on and min_off are given)
     """
     mae = mean_absolute_error(ground_truth, predictions)
 
@@ -182,10 +183,7 @@ def compute_metrics(
 
     tn, fp, fn, tp_val = confusion_matrix(gt_binary, pred_binary, labels=[0, 1]).ravel()
 
-    accuracy  = (tp_val + tn) / (tp_val + tn + fp + fn)
-    precision = tp_val / max(tp_val + fp, 1e-9)
-    recall    = tp_val / max(tp_val + fn, 1e-9)
-    f1        = 2 * precision * recall / max(precision + recall, 1e-9)
+    accuracy = (tp_val + tn) / (tp_val + tn + fp + fn)
 
     gt_energy   = np.sum(ground_truth) / 3600   # Wh (10-s samples → /3600)
     pred_energy = np.sum(predictions)  / 3600
@@ -193,10 +191,7 @@ def compute_metrics(
 
     result = {
         'mae'                 : mae,
-        'f1'                  : f1,
         'accuracy'            : accuracy,
-        'precision'           : precision,
-        'recall'              : recall,
         'tp'                  : int(tp_val),
         'tn'                  : int(tn),
         'fp'                  : int(fp),
@@ -212,7 +207,9 @@ def compute_metrics(
         tn2, fp2, fn2, tp2 = confusion_matrix(gt_status, pred_status, labels=[0, 1]).ravel()
         prec2  = tp2 / max(tp2 + fp2, 1e-9)
         rec2   = tp2 / max(tp2 + fn2, 1e-9)
-        result['f1_complex'] = 2 * prec2 * rec2 / max(prec2 + rec2, 1e-9)
+        result['precision_complex'] = prec2
+        result['recall_complex']    = rec2
+        result['f1_complex']        = 2 * prec2 * rec2 / max(prec2 + rec2, 1e-9)
 
     return result
 
@@ -274,7 +271,7 @@ def evaluate_model(
             raise ValueError("input_window_length is required for CNN evaluation.")
         offset = int(input_window_length / 2) - 1
         gt_norm = gt_norm[offset:][:len(predictions_norm)]
-    else:  # tcn / gru
+    else:  # tcn / cnn_seq2seq — all produce full sequences
         gt_norm = gt_norm[:len(predictions_norm)]
 
     gt   = gt_norm          * cutoff

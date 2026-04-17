@@ -1,0 +1,2 @@
+Model,Appliance,Dataset,MAE,Precision_Complex,Recall_Complex,F1_Complex,Accuracy,GT_Energy_Wh,Pred_Energy_Wh
+tcn,ac_1,plegma,22.7922,0.7385,0.9804,0.8424,0.9776,63468.64,56671.64

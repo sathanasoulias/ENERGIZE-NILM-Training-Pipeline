@@ -36,7 +36,7 @@ import torch.nn as nn
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src_pytorch import (
-    CNN_NILM, GRU_NILM, TCN_NILM,
+    CNN_NILM, TCN_NILM,
     SimpleNILMDataLoader,
     Trainer,
     set_seeds,
@@ -45,9 +45,8 @@ from src_pytorch import (
 )
 from src_pytorch.config import (
     get_model_config,
+    get_training_config,
     get_appliance_params,
-    TRAINING,
-    CALLBACKS,
 )
 from src_pytorch.evaluator import evaluate_model, compute_status
 
@@ -63,10 +62,7 @@ def build_model(model_name: str, model_config: dict) -> nn.Module:
     if model_name == 'cnn':
         return CNN_NILM(input_window_length=window)
 
-    if model_name == 'gru':
-        return GRU_NILM(input_window_length=window)
-
-    if model_name == 'tcn':
+    if model_name == 'wavenet_tcn':
         return TCN_NILM(
             input_window_length=window,
             depth=model_config.get('depth', 9),
@@ -75,7 +71,7 @@ def build_model(model_name: str, model_config: dict) -> nn.Module:
             stacks=model_config.get('stacks', 1),
         )
 
-    raise ValueError(f"Unknown model: '{model_name}'. Choose from cnn, gru, tcn.")
+    raise ValueError(f"Unknown model: '{model_name}'. Choose from cnn, cnn_seq2seq, tcn.")
 
 
 def save_results(
@@ -98,20 +94,20 @@ def save_results(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Metrics CSV ──────────────────────────────────────────────────────────
-    f1c = metrics.get('f1_complex')
+    f1c   = metrics.get('f1_complex')
+    prec  = metrics.get('precision_complex')
+    rec   = metrics.get('recall_complex')
     row = {
         'Model'               : model_name,
         'Appliance'           : appliance,
         'Dataset'             : dataset,
-        'MAE'                 : round(metrics['mae'],                  4),
-        'F1'                  : round(metrics['f1'],                   4),
-        'F1_Complex'          : round(f1c, 4) if f1c is not None else '',
-        'Accuracy'            : round(metrics['accuracy'],             4),
-        'Precision'           : round(metrics['precision'],            4),
-        'Recall'              : round(metrics['recall'],               4),
-        'GT_Energy_Wh'        : round(metrics['total_gt_energy_wh'],   2),
-        'Pred_Energy_Wh'      : round(metrics['total_pred_energy_wh'], 2),
-        'Energy_Error_Percent': round(metrics['energy_error_percent'],  2),
+        'MAE'                 : round(metrics['mae'],      4),
+        'Precision_Complex'   : round(prec, 4) if prec is not None else '',
+        'Recall_Complex'      : round(rec,  4) if rec  is not None else '',
+        'F1_Complex'          : round(f1c,  4) if f1c  is not None else '',
+        'Accuracy'            : round(metrics['accuracy'], 4),
+        'GT_Energy_Wh'  : round(metrics['total_gt_energy_wh'],   2),
+        'Pred_Energy_Wh': round(metrics['total_pred_energy_wh'], 2),
     }
     metrics_path = output_dir / f'{appliance}_results.csv'
     pd.DataFrame([row]).to_csv(metrics_path, index=False)
@@ -170,15 +166,21 @@ def train(
 
     # Model
     model = build_model(model_name, model_config).to(device)
+    n_params = count_parameters(model)
+    model_size_mb = n_params * 4 / 1024**2
     print(f"\n  Model             : {model_name.upper()}")
-    print(f"  Parameters        : {count_parameters(model):,}")
+    print(f"  Parameters        : {n_params:,}")
+    print(f"  Size (FP32)       : {model_size_mb:.1f} MB")
+    print(f"  Size (INT8)       : {model_size_mb / 4:.1f} MB")
 
     # Optimiser and trainer
+    training_config = get_training_config(model_name)
+
     optimizer = torch.optim.Adam(
         model.parameters(),
-        lr=TRAINING['learning_rate'],
-        betas=(TRAINING['beta_1'], TRAINING['beta_2']),
-        eps=TRAINING['epsilon'],
+        lr=training_config['learning_rate'],
+        betas=(0.9, 0.999),
+        eps=1e-8,
     )
 
     checkpoint_dir  = output_dir / 'checkpoint'
@@ -195,11 +197,15 @@ def train(
     trainer.setup_callbacks(
         checkpoint_dir=str(checkpoint_dir),
         tensorboard_dir=str(tensorboard_dir),
-        early_stopping_patience=CALLBACKS['early_stopping']['patience'],
-        early_stopping_min_delta=CALLBACKS['early_stopping']['min_delta'],
+        early_stopping_patience=training_config['early_stopping_patience'],
+        early_stopping_min_delta=training_config['early_stopping_min_delta'],
+        lr_scheduler_factor=training_config['lr_scheduler']['factor'],
+        lr_scheduler_patience=training_config['lr_scheduler']['patience'],
+        lr_scheduler_min_lr=training_config['lr_scheduler']['min_lr'],
+        lr_scheduler_cooldown=training_config['lr_scheduler']['cooldown'],
     )
 
-    print(f"\n  Starting training  (max {TRAINING['epochs']} epochs) ...")
+    print(f"\n  Starting training  (max {training_config['epochs']} epochs) ...")
     print(f"  Checkpoint dir    : {checkpoint_dir}")
     print(f"  TensorBoard dir   : {tensorboard_dir}")
     print(f"{'='*60}\n")
@@ -207,7 +213,7 @@ def train(
     history = trainer.fit(
         train_loader=data_loader.train,
         val_loader=data_loader.val,
-        epochs=TRAINING['epochs'],
+        epochs=training_config['epochs'],
         verbose=True,
     )
 
@@ -323,8 +329,8 @@ def parse_args() -> argparse.Namespace:
                         choices=['refit', 'plegma'], help='Dataset to use')
     parser.add_argument('--appliance',   '-a', type=str, default='boiler',
                         help='Appliance to disaggregate')
-    parser.add_argument('--model',       '-m', type=str, default='tcn',
-                        choices=['cnn', 'gru', 'tcn'], help='Model architecture')
+    parser.add_argument('--model',       '-m', type=str, default='wavenet_tcn',
+                        choices=['cnn', 'cnn_seq2seq', 'wavenet_tcn'], help='Model architecture')
     parser.add_argument('--data-root',         type=str, default='./data/processed',
                         help='Root directory containing processed CSV files')
     parser.add_argument('--output-root',       type=str, default='./outputs',

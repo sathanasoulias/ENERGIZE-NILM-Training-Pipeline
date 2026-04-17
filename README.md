@@ -20,13 +20,13 @@
 
 **ENERGIZE NILM** is the baseline deep learning code for appliance-level energy disaggregation developed within the **ENERGIZE** project. Given a single whole-home power signal from the **PLEGMA** dataset, the models learn to estimate the individual power consumption of target appliances — without any additional hardware sensors.
 
-Two PyTorch architectures are provided:
+Three PyTorch architectures are provided:
 
-| Model | Architecture | Strategy | Input Window |
-|-------|-------------|----------|-------------|
-| **CNN** | 1-D Convolutional Network | Seq2Point | 299 samples |
-| **GRU** | Gated Recurrent Unit | Seq2Point | 199 samples |
-| **TCN** | Temporal Convolutional Network | Seq2Seq | 600 samples |
+| Model | Architecture | Strategy | Input Window | Batch Size |
+|-------|-------------|----------|-------------|------------|
+| **CNN** | 1-D Convolutional Network | Seq2Point | 299 samples | 1024 |
+| **CNN Seq2Seq** | 1-D Convolutional Network | Seq2Seq | 299 samples | 512 |
+| **WaveNet TCN** | Dilated Causal Convolutional Network | Seq2Seq | 600 samples | 128 |
 
 ---
 
@@ -112,14 +112,14 @@ python data.py --dataset plegma --appliance washing_machine
 ### Step 2 — Train and evaluate
 
 ```bash
-# Default experiment: boiler / TCN
+# Default experiment: boiler / WaveNet TCN
 python main.py
 
 # Custom model
-python main.py --dataset plegma --appliance boiler --model tcn
+python main.py --dataset plegma --appliance boiler --model wavenet_tcn
 
 # Evaluate only (load an existing checkpoint)
-python main.py --eval-only --checkpoint outputs/tcn_boiler/checkpoint/model.pt
+python main.py --eval-only --checkpoint outputs/wavenet_tcn_boiler/checkpoint/model.pt
 ```
 
 Results are written to `outputs/<model>_<appliance>/metrics/`.
@@ -141,20 +141,23 @@ Only three values need to be set per experiment:
 
 ```python
 DATASET_NAME   = 'plegma'
-APPLIANCE_NAME = 'boiler'   # boiler | ac_1 | washing_machine
-MODEL_NAME     = 'tcn'      # cnn | gru | tcn
+APPLIANCE_NAME = 'boiler'         # boiler | ac_1 | washing_machine
+MODEL_NAME     = 'wavenet_tcn'    # cnn | cnn_seq2seq | wavenet_tcn
 ```
 
 **Key training parameters**
 
-| Parameter | TCN | CNN | GRU | Description |
-|-----------|-----|-----|-----|-------------|
-| Epochs | 100 | 50 | 100 | Maximum training epochs |
-| Early stopping patience | 20 | 10 | 20 | Epochs without val_loss improvement before stopping |
+| Parameter | CNN | CNN Seq2Seq | WaveNet TCN | Description |
+|-----------|-----|-------------|-------------|-------------|
+| Input window | 299 | 299 | 600 | Samples fed to the model |
+| Batch size | 1024 | 512 | 128 | Samples per gradient step |
+| Epochs | 100 | 100 | 100 | Maximum training epochs |
+| Learning rate | 0.001 | 0.001 | 0.001 | Adam initial LR |
+| Early stopping patience | 20 | 20 | 20 | Epochs without val_loss improvement before stopping |
 | Optimizer | Adam | Adam | Adam | β₁=0.9, β₂=0.999, ε=1e-8 |
 | Loss | MSE | MSE | MSE | Mean squared error on normalised targets |
 
-**Learning rate:** `0.001` (Adam) — shared across all appliances and models.
+All models were trained for up to **100 epochs** using an adaptive learning rate schedule (ReduceLROnPlateau, factor 0.5) that halves the learning rate whenever validation loss stops improving, combined with **early stopping** to prevent overfitting and restore the best checkpoint automatically.
 
 ---
 
@@ -165,7 +168,15 @@ MODEL_NAME     = 'tcn'      # cnn | gru | tcn
 | **MAE** | Mean Absolute Error in Watts — primary regression metric |
 | **F1** | Harmonic mean of Precision and Recall computed on duration-filtered ON/OFF status: `F1 = 2 · (Precision · Recall) / (Precision + Recall)`. The duration filter is applied to both ground truth and predictions before scoring, so the metric reflects appliance-cycle detection quality rather than sample-level jitter (see [Postprocessing](#postprocessing)) |
 | **Accuracy** | Overall ON/OFF classification accuracy |
-| **Energy Error %** | Absolute relative error on total energy consumption (Wh) |
+
+---
+
+## Data Normalisation
+
+- **Aggregate signal** — z-score: `(x − mean) / std`
+- **Appliance signal** — cutoff scaling: `y / cutoff`
+- During evaluation, predictions are denormalised and clipped to `[0, cutoff]` before metric calculation. Samples below the appliance threshold are zeroed out.
+
 
 ---
 
@@ -194,37 +205,29 @@ The same filter is applied to both ground truth and predictions. The **F1** scor
 
 All models are evaluated on fully held-out test houses.
 
-### TCN (Seq2Seq)
+### CNN — Seq2Point
 
-| Appliance | MAE (W) | F1 | Accuracy | Energy Error % |
-|-----------|---------|-----|----------|---------------|
-| `boiler` | 13.02 | 0.9197 | 0.9960 | 4.94 |
-| `ac_1` | 11.72 | 0.9554 | 0.9934 | 6.03 |
-| `washing_machine` | 3.20 | 0.8627 | 0.9860 | 9.40 |
+| Appliance | MAE (W) | F1 | Accuracy |
+|-----------|---------|-----|----------|
+| `boiler` | 7.31 | 0.9387 | 0.9974 |
+| `ac_1` | 17.10 | 0.9460 | 0.9888 |
+| `washing_machine` | 3.22 | 0.8835 | 0.9859 |
 
-### CNN (Seq2Point)
+### CNN Seq2Seq
 
-| Appliance | MAE (W) | F1 | Accuracy | Energy Error % |
-|-----------|---------|-----|----------|---------------|
-| `boiler` | 9.84 | 0.9084 | 0.9964 | 8.87 |
-| `ac_1` | 17.10 | 0.9460 | 0.9888 | 17.63 |
-| `washing_machine` | 3.22 | 0.8294 | 0.9859 | 4.29 |
+| Appliance | MAE (W) | F1 | Accuracy |
+|-----------|---------|-----|----------|
+| `boiler` | 7.97 | 0.9562 | 0.9984 |
+| `ac_1` | 17.42 | 0.8714 | 0.9848 |
+| `washing_machine` | 3.39 | 0.8460 | 0.9823 |
 
-### GRU (Seq2Point)
+### WaveNet TCN — Seq2Seq
 
-| Appliance | MAE (W) | F1 | Accuracy | Energy Error % |
-|-----------|---------|-----|----------|---------------|
-| `boiler` | 7.99 | 0.9320 | 0.9975 | 6.66 |
-| `ac_1` | 23.29 | 0.9178 | 0.9912 | 28.87 |
-| `washing_machine` | 3.37 | 0.8542 | 0.9871 | 10.07 |
-
----
-
-## Normalisation
-
-- **Aggregate signal** — z-score: `(x − mean) / std`
-- **Appliance signal** — cutoff scaling: `y / cutoff`
-- During evaluation, predictions are denormalised and clipped to `[0, cutoff]` before metric calculation. Samples below the appliance threshold are zeroed out.
+| Appliance | MAE (W) | F1 | Accuracy |
+|-----------|---------|-----|----------|
+| `boiler` | 10.05 | 0.9331 | 0.9972 |
+| `ac_1` | 22.79 | 0.8424 | 0.9776 |
+| `washing_machine` | 4.20 | 0.8763 | 0.9844 |
 
 ---
 
