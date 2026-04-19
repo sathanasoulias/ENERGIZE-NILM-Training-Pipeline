@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sotirios Athanasoulias. MIT License — see LICENSE for details.
 """
 Configuration for PyTorch NILM models.
 
@@ -227,7 +228,7 @@ PLEGMA_PARAMS = {
         'std': 731.6132455403795,
         'min_on'    : 2,
         'min_off'   : 100,
-        'min_committed_duration': 180,
+        'min_committed_duration': 250,
     },
     'fridge': {
         'threshold': 50,

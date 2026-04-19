@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sotirios Athanasoulias. MIT License — see LICENSE for details.
 """
 TCN (Temporal Convolutional Network) based Seq2Seq model for NILM
 Based on: https://arxiv.org/pdf/1902.08736 (WaveNet-style architecture)

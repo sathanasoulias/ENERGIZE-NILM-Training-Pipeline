@@ -1,9 +1,10 @@
+# Copyright (c) 2026 Sotirios Athanasoulias. MIT License — see LICENSE for details.
 """
 CNN-based Seq2Seq model for NILM.
-
 Identical architecture to CNN_NILM (Seq2Point) except the final Dense
 layer outputs 299 values instead of 1 — predicting the full appliance
 power sequence for the input window.
+Based on: https://arxiv.org/pdf/1612.09106
 """
 
 import torch
